@@ -4,21 +4,17 @@
 #include "ble/services/BatteryService.h"
 #include "ble/services/DeviceInformationService.h"
 #include "rtos.h"
+#include "ADXL345_I2C.h"
 #include <string.h>
 #include "SDFileSystem.h"
 #define N 100//addressを保存する個数
-#define M 12//addressとtimeを入れる
+#define M 6//addressとtimeを入れる
 #define GET_TIME 10000
 #define SEND_TIME 20000
-#define AA 0xAA
-#define BB 0xBB
-#define CC 0xCC
-#define DD 0xDD
- 
-DigitalOut myled3(LED3); 
+#define AD 0xEE
 
+DigitalOut myled3(LED3); 
 Semaphore one_slot(1);
- 
 Timer timer;
 BLE  ble;
 char address[N][M]={};//保存する配列を初期化
@@ -26,80 +22,48 @@ const GapScanningParams scanningParams;
 int wt;//threadの時間
 int wt1=0;//central mode の時間
 int ran;
+int countfp=0;
+char id[] = "/sd/e.csv"; 
+char acc[] = "/sd/e_acc.csv";
  
+ //加速度センサー
+ADXL345_I2C accelerometer(p7, p30);
 SDFileSystem sd(p25, p28, p29, p21, "sd"); // the pinout on the mbed Cool Components workshop board
-FILE *fp;
+FILE *fp, *kp;
 int counter=0,i,b,flag;
+int readings[3] = {0, 0, 0}; 
  
 void onScanCallback(const Gap::AdvertisementCallbackParams_t *params){
-    time_t seconds = time(NULL); // JST
-     struct tm *t = localtime(&seconds);
-     
-     /*printf("%04d/%02d/%02d %02d:%02d:%02d\r\n",
-      t->tm_year + 1900, t->tm_mon, t->tm_mday, t->tm_hour, t->tm_min, t->tm_sec);
-    */
-    flag=0;
- 
+    flag=0;//重複確認のためのフラグ
     for(i=0;i<counter;i++){
         if(address[i][0] == params->peerAddr[0]){
             flag=1;
             break;
         }
-    }    
-    
+    }       
     if(flag==0){
         for(i=0; i<6; i++){
             address[counter][i]=params->peerAddr[i];
          }
         time_t seconds = time(NULL);
-        struct tm *t = localtime(&seconds);
-        address[counter][6]= t->tm_year - 70;
-        address[counter][7]= t->tm_mon;
-        address[counter][8]= t->tm_mday - 1;
-        address[counter][9]= t->tm_hour;
-        address[counter][10]= t->tm_min;
-        address[counter][11]= t->tm_sec;
-    
+        
+        char buff[10]={};
+        sprintf(buff, "%d", seconds);
+        strcat(address[counter],buff);
+
         for(b=0; b<6 ; b++){
-            fprintf(fp,"%02x", address[counter][b]);
-            printf("%02x", address[counter][b]);
-            if(b==5)printf(" ");
-        }    
-        
-        fprintf(fp,",%04d",address[counter][b]);
-        b++;
-        
-        for(; b<12; b++){
-            fprintf(fp,"%02d",address[counter][b]);
-            printf("%02d",address[counter][b]);
-            if(b==11){
-                fprintf(fp,"\n");
-                printf("\r\n");
-            }
-        }  
-        //fprintf(fp,",%04d,%02d,%02d,%02d,%02d,%02d\n",address[counter][6],address[counter][7],address[counter][8],address[counter][9],address[counter][10],address[counter][11]);
-        //printf(",%04d/%02d/%02d %02d:%02d:%02d\r\n",address[counter][6],address[counter][7],address[counter][8],address[counter][9],address[counter][10],address[counter][11]);
-        
-        counter++;
- 
-/*      
-        printf("DEV:");
+                fprintf(fp,"%02x", address[counter][b]);
+                //printf("%02x", address[counter][b]);
+        }
+        fprintf(fp, ",%d\r\n",seconds);
+        //printf("    %d\r\n",seconds);
+        counter++; 
+      
+/*        printf("DEV:");
         for(b=0; b<6 ; b++)printf("%02x ", address[counter][b]);   
-        printf("%04d/%02d/%02d %02d:%02d:%02d \r\n",address[counter][6],address[counter][7],address[counter][8],address[counter][9],address[counter][10],address[counter][11]);
-*/
+        printf("%04d/%02d/%02d %02d:%02d:%02d \r\n",address[counter][6],address[counter][7],address[counter][8],address[counter][9],address[counter][10],address[counter][11]);*/
+
  
-/*配列の中身をすべて表示     
-        for(a=0; a<counter; a++){
-             for(b=0; b<6 ; b++){
-                if(b==0)printf("DEV:");
-                printf("%02x ", address[a][b]);
-                if(b==5){
-                printf("%04d/%02d/%02d %02d:%02d:%02d \r\n",address[a][6],address[a][7],address[a][8],address[a][9],address[a][10],address[a][11]);
-                }
-             }
-             if(a==counter-1)printf("----------\n\r");
-        }         
-*/
     }  
 }      
  
@@ -117,23 +81,45 @@ void test_thread(void const *name) {
         }
 //2        
         if(!strcmp((const char*)name, "2")){
-        memset(address, 0, sizeof(address));//配列の初期化
+            memset(address, 0, sizeof(address));//配列の初期化
             counter = 0;
-            printf("**get**\n\r");
+            //printf("**get**\n\r");
             myled3 = 0;
             wt=0;//central modeの際はthreadの時間は0sec
             wt1 = GET_TIME ;//centralmode の時間はこっち
-            fp = fopen("/sd/test.csv", "a");
             
-            printf("%d秒間の受信\n\r",wt1/1000);
+            if(countfp == 0){
+                fp = fopen( id , "w");
+                fclose(fp);
+                kp = fopen( acc , "w");
+                fclose(kp);
+                countfp = 1;
+            }
+            
+            fp = fopen( id , "a");
+            kp = fopen( acc , "a");
+            
+            //printf("%d seconds receive\n\r",wt1/1000);
             timer.start();
+            
             while(1){ 
+                myled3 = !myled3;       
+                time_t seconds = time(NULL);
+                accelerometer.getOutput(readings);
+                //13-bit, sign extended values.
+            //    printf("%f, %f, %f",(int16_t)readings[0]*(9.8/256), (int16_t)readings[1]*(9.8/256), (int16_t)readings[2]*(9.8/256));
+            //    printf(":    %d\r\n",seconds);
+                fprintf(kp,"%f,%f,%f",(int16_t)readings[0]*(9.8/256), (int16_t)readings[1]*(9.8/256), (int16_t)readings[2]*(9.8/256));
+                fprintf(kp, ",%d\n",seconds);
+                    
                 ble.waitForEvent();
                 if(timer.read() > wt1/1000){
                         timer.stop();
                         timer.reset();
                         ble.stopScan();
                         fclose(fp);
+                        fclose(kp);
+                        
                         break;
                 }
             }
@@ -142,12 +128,34 @@ void test_thread(void const *name) {
         
 //3        
         if(!strcmp((const char*)name, "3")){
-            printf("**send**\n\r"); 
-            myled3 = 1;
+            //printf("**send**\n\r"); 
             ran = rand() % 10;
-            wt=SEND_TIME - ran*1000;
-            printf("%d秒間の送信\n\r",wt/1000);
+            wt= 0;
+            wt1 = SEND_TIME - ran*1000;
+            //printf("%d seconds sendin\n\r",wt1/1000);
+            // ble.setAdvertisingInterval(1600); /* 1000ms; in multiples of 0.625ms. */
             ble.gap().startAdvertising();//BLEの送信
+
+            timer.start();
+            while(1){ 
+                myled3 = !myled3;       
+                time_t seconds = time(NULL);
+                accelerometer.getOutput(readings);
+                //13-bit, sign extended values.
+                printf("%f, %f, %f",(int16_t)readings[0]*(9.8/256), (int16_t)readings[1]*(9.8/256), (int16_t)readings[2]*(9.8/256));
+                printf(":    %d\r\n",seconds);
+                fprintf(kp,"%f,%f,%f",(int16_t)readings[0]*(9.8/256), (int16_t)readings[1]*(9.8/256), (int16_t)readings[2]*(9.8/256));
+                fprintf(kp, ",%d\n",seconds);
+        
+                
+                if(timer.read() > wt1/1000){
+                        timer.stop();
+                        timer.reset();
+                        fclose(kp);
+                        break;
+                }
+            }
+
         }      
         Thread::wait(wt);
         one_slot.release();
@@ -164,14 +172,28 @@ void bleInitComplete(BLE::InitializationCompleteCallbackContext *params)
     if (error != BLE_ERROR_NONE) {
         return;
     }
-    const uint8_t address1[] = {AA,AA,AA,AA,AA,AA};
+    const uint8_t address1[] = {AD,AD,AD,AD,AD,AD};
     ble.gap().setAddress(BLEProtocol::AddressType::PUBLIC, address1);
-//  ble.gap().accumulateAdvertisingPayload(GapAdvertisingData::COMPLETE_LOCAL_NAME, (uint8_t *)DEVICE_NAME, sizeof(DEVICE_NAME));
-//   ble.gap().setAdvertisingType(GapAdvertisingParams::ADV_CONNECTABLE_UNDIRECTED);
-//   ble.gap().setAdvertisingInterval(1000); /* 1000ms. */
+/*  ble.gap().accumulateAdvertisingPayload(GapAdvertisingData::COMPLETE_LOCAL_NAME, (uint8_t *)DEVICE_NAME, sizeof(DEVICE_NAME));
+  ble.gap().setAdvertisingType(GapAdvertisingParams::ADV_CONNECTABLE_UNDIRECTED);
+  ble.gap().setAdvertisingInterval(1000);*/
 }
  
+ 
 int main (void) {
+//------------------------------------------------------
+//加速度センサーの初期化
+
+    //Go into standby mode to configure the device.
+    accelerometer.setPowerControl(0x00);
+    //Full resolution, +/-16g, 4mg/LSB.
+    accelerometer.setDataFormatControl(0x0B);
+    //3.2kHz data rate.
+    accelerometer.setDataRate(ADXL345_3200HZ);
+    //Measurement mode.
+    accelerometer.setPowerControl(0x08);
+//-------------------------------------------------------
+    
     ble.init(bleInitComplete);
     ble.setScanParams(GapScanningParams::SCAN_INTERVAL_MAX,GapScanningParams::SCAN_WINDOW_MAX,0);
  

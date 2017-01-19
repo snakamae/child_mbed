@@ -26,7 +26,6 @@
 #include "FileHandle.h"
 #include "ff.h"
 #include <stdint.h>
-#include "PlatformMutex.h"
 
 using namespace mbed;
 
@@ -89,15 +88,6 @@ public:
     virtual int disk_write(const uint8_t *buffer, uint32_t sector, uint32_t count) = 0;
     virtual int disk_sync() { return 0; }
     virtual uint32_t disk_sectors() = 0;
-
-protected:
-
-    virtual void lock();
-    virtual void unlock();
-
-private:
-
-    PlatformMutex *_mutex;
 
 };
 

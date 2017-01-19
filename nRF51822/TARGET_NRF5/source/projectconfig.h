@@ -96,8 +96,8 @@
 /*=========================================================================
     BTLE SETTINGS
     -----------------------------------------------------------------------*/
-
-    #define CFG_BLE_TX_POWER_LEVEL                     0                        /**< in dBm (Valid values are -40, -20, -16, -12, -8, -4, 0, 4) */
+//This is change from 0
+    #define CFG_BLE_TX_POWER_LEVEL                     -20                        /**< in dBm (Valid values are -40, -20, -16, -12, -8, -4, 0, 4) */
 
     /*---------------------------- BOND MANAGER ---------------------------*/
     #define CFG_BLE_BOND_FLASH_PAGE_BOND               (BLE_FLASH_PAGE_END-1)   /**< Flash page used for bond manager bonding information.*/

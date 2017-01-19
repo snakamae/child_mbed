@@ -25,14 +25,12 @@
 
 using namespace mbed;
 
-FATDirHandle::FATDirHandle(const FATFS_DIR &the_dir, PlatformMutex * mutex): _mutex(mutex) {
+FATDirHandle::FATDirHandle(const FATFS_DIR &the_dir) {
     dir = the_dir;
 }
 
 int FATDirHandle::closedir() {
-    lock();
     int retval = f_closedir(&dir);
-    unlock();
     delete this;
     return retval;
 }
@@ -40,7 +38,6 @@ int FATDirHandle::closedir() {
 struct dirent *FATDirHandle::readdir() {
     FILINFO finfo;
 
-    lock();
 #if _USE_LFN
     finfo.lfname = cur_entry.d_name;
     finfo.lfsize = sizeof(cur_entry.d_name);
@@ -50,52 +47,33 @@ struct dirent *FATDirHandle::readdir() {
 
 #if _USE_LFN
     if(res != 0 || finfo.fname[0]==0) {
-        unlock();
         return NULL;
     } else {
         if(cur_entry.d_name[0]==0) {
             // No long filename so use short filename.
             memcpy(cur_entry.d_name, finfo.fname, sizeof(finfo.fname));
         }
-        unlock();
         return &cur_entry;
     }
 #else
     if(res != 0 || finfo.fname[0]==0) {
-        unlock();
         return NULL;
     } else {
         memcpy(cur_entry.d_name, finfo.fname, sizeof(finfo.fname));
-        unlock();
         return &cur_entry;
     }
 #endif /* _USE_LFN */
 }
 
 void FATDirHandle::rewinddir() {
-    lock();
     dir.index = 0;
-    unlock();
 }
 
 off_t FATDirHandle::telldir() {
-    lock();
-    off_t offset = dir.index;
-    unlock();
-    return offset;
+    return dir.index;
 }
 
 void FATDirHandle::seekdir(off_t location) {
-    lock();
     dir.index = location;
-    unlock();
-}
-
-void FATDirHandle::lock() {
-    _mutex->lock();
-}
-
-void FATDirHandle::unlock() {
-    _mutex->unlock();
 }
 
